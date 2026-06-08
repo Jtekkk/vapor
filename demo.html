@@ -48,7 +48,8 @@
                 0 0 60px #8338ec,
                 0 0 80px #3a86ff;
             margin-bottom: 30px;
-            animation: neonFlicker 0.15s infinite;
+            animation: neonFlicker 0.1s infinite;
+            transition: transform 0.05s ease-out, text-shadow 0.1s ease-out;
         }
 
         @keyframes neonFlicker {
@@ -232,6 +233,7 @@
     <script>
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
+        const audio = document.querySelector('audio');
 
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
@@ -240,6 +242,47 @@
             canvas.width = window.innerWidth;
             canvas.height = window.innerHeight;
         });
+
+        // Audio analysis setup
+        let audioContext = null;
+        let analyser = null;
+        let dataArray = null;
+        let beatIntensity = 0;
+        let bassIntensity = 0;
+
+        function initAudio() {
+            if (!audioContext) {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const source = audioContext.createMediaElementAudioSource(audio);
+                analyser = audioContext.createAnalyser();
+                analyser.fftSize = 256;
+                source.connect(analyser);
+                analyser.connect(audioContext.destination);
+                dataArray = new Uint8Array(analyser.frequencyBinCount);
+            }
+        }
+
+        function updateBeatData() {
+            if (!analyser) return;
+            analyser.getByteFrequencyData(dataArray);
+
+            // Bass detection (low frequencies)
+            const bassEnd = Math.floor(dataArray.length * 0.1);
+            let bass = 0;
+            for (let i = 0; i < bassEnd; i++) {
+                bass += dataArray[i];
+            }
+            bassIntensity = (bass / (bassEnd * 255)) * 2;
+
+            // Overall beat intensity
+            let total = 0;
+            for (let i = 0; i < dataArray.length; i++) {
+                total += dataArray[i];
+            }
+            beatIntensity = Math.min((total / (dataArray.length * 255)) * 3, 1);
+        }
+
+        audio.addEventListener('play', initAudio);
 
         // Particle system for atmosphere
         class Particle {
@@ -267,8 +310,8 @@
 
             draw() {
                 ctx.fillStyle = this.color;
-                ctx.globalAlpha = this.opacity;
-                ctx.fillRect(this.x, this.y, this.size, this.size);
+                ctx.globalAlpha = this.opacity * (1 + beatIntensity * 0.5);
+                ctx.fillRect(this.x, this.y, this.size * (1 + beatIntensity * 2), this.size * (1 + beatIntensity * 2));
             }
         }
 
@@ -277,16 +320,23 @@
             particles.push(new Particle());
         }
 
+        // Beat-reactive colors
+        const colors = ['#ff006e', '#8338ec', '#3a86ff', '#00ff88', '#ff3366'];
+        let colorIndex = 0;
+
         // Mountains/Hills for perspective effect
         function drawMountains() {
             ctx.globalAlpha = 1;
+            const now = Date.now();
+            const beatPulse = 1 + beatIntensity * 0.3;
 
             // Far mountains
-            ctx.fillStyle = 'rgba(255, 0, 110, 0.1)';
+            const color1 = beatIntensity > 0.5 ? 'rgba(255, 51, 102, 0.2)' : 'rgba(255, 0, 110, 0.1)';
+            ctx.fillStyle = color1;
             ctx.beginPath();
             ctx.moveTo(0, canvas.height * 0.6);
             for (let x = 0; x < canvas.width; x += 20) {
-                const y = canvas.height * 0.6 + Math.sin(x * 0.01 + Date.now() * 0.0001) * 30;
+                const y = canvas.height * 0.6 + Math.sin(x * 0.01 + now * 0.0002) * (30 + bassIntensity * 40);
                 ctx.lineTo(x, y);
             }
             ctx.lineTo(canvas.width, canvas.height);
@@ -294,20 +344,23 @@
             ctx.fill();
 
             // Mid mountains
-            ctx.fillStyle = 'rgba(131, 56, 236, 0.15)';
+            const color2 = beatIntensity > 0.6 ? 'rgba(131, 56, 236, 0.25)' : 'rgba(131, 56, 236, 0.15)';
+            ctx.fillStyle = color2;
             ctx.beginPath();
             ctx.moveTo(0, canvas.height * 0.5);
             for (let x = 0; x < canvas.width; x += 30) {
-                const y = canvas.height * 0.5 + Math.sin(x * 0.005 + Date.now() * 0.0002) * 40;
+                const y = canvas.height * 0.5 + Math.sin(x * 0.005 + now * 0.0003) * (40 + bassIntensity * 50);
                 ctx.lineTo(x, y);
             }
             ctx.lineTo(canvas.width, canvas.height);
             ctx.lineTo(0, canvas.height);
             ctx.fill();
 
-            // Neon grid lines
-            ctx.strokeStyle = 'rgba(58, 134, 255, 0.2)';
-            ctx.lineWidth = 1;
+            // Neon grid lines - beat reactive
+            const gridAlpha = 0.2 + beatIntensity * 0.3;
+            const gridColor = beatIntensity > 0.7 ? `rgba(255, 0, 110, ${gridAlpha})` : `rgba(58, 134, 255, ${gridAlpha})`;
+            ctx.strokeStyle = gridColor;
+            ctx.lineWidth = 1 + beatIntensity * 2;
             for (let i = 0; i < 20; i++) {
                 const y = canvas.height * 0.4 + i * canvas.height * 0.02;
                 ctx.beginPath();
@@ -319,7 +372,11 @@
 
         // Animation loop
         function animate() {
-            ctx.fillStyle = 'rgba(10, 14, 39, 0.1)';
+            updateBeatData();
+
+            // Beat-reactive background
+            const bgAlpha = 0.1 + beatIntensity * 0.15;
+            ctx.fillStyle = `rgba(10, 14, 39, ${bgAlpha})`;
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
             drawMountains();
@@ -331,10 +388,36 @@
 
             ctx.globalAlpha = 1;
 
-            // Occasional color flash
-            if (Math.random() > 0.99) {
-                ctx.fillStyle = `rgba(255, 0, 110, 0.1)`;
+            // Beat-reactive flash
+            if (beatIntensity > 0.7) {
+                const flashColor = colors[Math.floor(Date.now() / 100) % colors.length];
+                ctx.fillStyle = `${flashColor}15`;
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
+            }
+
+            // Beat circle effect at center
+            if (beatIntensity > 0.5) {
+                const centerX = canvas.width / 2;
+                const centerY = canvas.height / 2;
+                const radius = 50 + beatIntensity * 200;
+                ctx.strokeStyle = `rgba(255, 0, 110, ${0.3 * beatIntensity})`;
+                ctx.lineWidth = 2 + beatIntensity * 4;
+                ctx.beginPath();
+                ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+                ctx.stroke();
+            }
+
+            // Bass-reactive vertical lines
+            if (bassIntensity > 0.3) {
+                ctx.strokeStyle = `rgba(58, 134, 255, ${bassIntensity * 0.5})`;
+                ctx.lineWidth = 2 + bassIntensity * 8;
+                const spacing = Math.max(20, 100 - bassIntensity * 100);
+                for (let x = 0; x < canvas.width; x += spacing) {
+                    ctx.beginPath();
+                    ctx.moveTo(x, canvas.height * 0.3);
+                    ctx.lineTo(x, canvas.height * 0.7 + bassIntensity * 100);
+                    ctx.stroke();
+                }
             }
 
             requestAnimationFrame(animate);
@@ -349,6 +432,39 @@
                 document.exitFullscreen();
             }
         }
+
+        // Beat-reactive DOM elements
+        const logo = document.querySelector('.logo');
+        const tagline = document.querySelector('.tagline');
+
+        function updateUIBeat() {
+            // Scale logo with beat
+            const scale = 1 + beatIntensity * 0.2 + bassIntensity * 0.15;
+            logo.style.transform = `scale(${scale})`;
+
+            // Color shift with beat
+            if (beatIntensity > 0.6) {
+                logo.style.textShadow = `
+                    0 0 ${20 + beatIntensity * 30}px #ff3366,
+                    0 0 ${40 + beatIntensity * 40}px #ff3366,
+                    0 0 ${60 + beatIntensity * 50}px #ff006e,
+                    0 0 ${80 + beatIntensity * 60}px #3a86ff
+                `;
+                tagline.style.color = '#ff3366';
+            } else {
+                logo.style.textShadow = `
+                    0 0 ${20 + beatIntensity * 15}px #ff006e,
+                    0 0 ${40 + beatIntensity * 20}px #ff006e,
+                    0 0 ${60 + beatIntensity * 25}px #8338ec,
+                    0 0 ${80 + beatIntensity * 30}px #3a86ff
+                `;
+                tagline.style.color = '#ff006e';
+            }
+
+            requestAnimationFrame(updateUIBeat);
+        }
+
+        updateUIBeat();
 
         // Keyboard shortcuts
         document.addEventListener('keydown', (e) => {
