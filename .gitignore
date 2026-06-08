@@ -1,6 +1,7 @@
 node_modules/
 dist/
 *.exe
+*.wav
 .DS_Store
 .env
 *.log

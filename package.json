@@ -25,10 +25,12 @@
       "main.js",
       "preload.js",
       "demo.html",
-      "audio.wav"
+      "audio.mp3"
     ],
     "win": {
       "target": "portable"
-    }
+    },
+    "compression": "maximum",
+    "electronLanguages": ["en-US"]
   }
 }
